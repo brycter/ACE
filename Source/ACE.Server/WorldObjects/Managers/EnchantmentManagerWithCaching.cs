@@ -171,20 +171,20 @@ namespace ACE.Server.WorldObjects.Managers
             hasEnchantments = null;
             hasVitae = null;
 
-            attributeModAdditiveCache.Clear();
-            attributeModMultiplierCache.Clear();
+            attributeModAdditiveCache?.Clear();
+            attributeModMultiplierCache?.Clear();
 
-            vitalModAdditiveCache.Clear();
-            vitalModMultiplierCache.Clear();
+            vitalModAdditiveCache?.Clear();
+            vitalModMultiplierCache?.Clear();
 
-            skillModAdditiveCache.Clear();
-            skillModMultiplierCache.Clear();
+            skillModAdditiveCache?.Clear();
+            skillModMultiplierCache?.Clear();
 
             bodyArmorModCache = null;
-            resistanceModCache.Clear();
-            protectionResistanceModCache.Clear();
-            vulnerabilityResistanceModCache.Clear();
-            regenerationModCache.Clear();
+            resistanceModCache?.Clear();
+            protectionResistanceModCache?.Clear();
+            vulnerabilityResistanceModCache?.Clear();
+            regenerationModCache?.Clear();
 
             damageBonusCache = null;
             damageModCache = null;
@@ -195,23 +195,23 @@ namespace ACE.Server.WorldObjects.Managers
             elementalDamageModCache = null;
             varianceModCache = null;
             armorModCache = null;
-            armorModVsTypeModCache.Clear();
-            ratingCache.Clear();
+            armorModVsTypeModCache?.Clear();
+            ratingCache?.Clear();
             netherDotDamageRatingCache = null;
             xpBonusCache = null;
             resistLockpickCache = null;
         }
 
 
-        private readonly Dictionary<PropertyAttribute, int> attributeModAdditiveCache = new Dictionary<PropertyAttribute, int>();
-        private readonly Dictionary<PropertyAttribute, float> attributeModMultiplierCache = new Dictionary<PropertyAttribute, float>();
+        private Dictionary<PropertyAttribute, int> attributeModAdditiveCache;
+        private Dictionary<PropertyAttribute, float> attributeModMultiplierCache;
 
         /// <summary>
         /// Returns the additive modifiers to an attribute from enchantments
         /// </summary>
         public override int GetAttributeMod_Additive(PropertyAttribute attribute)
         {
-            if (attributeModAdditiveCache.TryGetValue(attribute, out var value))
+            if ((attributeModAdditiveCache ??= new()).TryGetValue(attribute, out var value))
                 return value;
 
             value = base.GetAttributeMod_Additive(attribute);
@@ -226,7 +226,7 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         public override float GetAttributeMod_Multiplier(PropertyAttribute attribute)
         {
-            if (attributeModMultiplierCache.TryGetValue(attribute, out var value))
+            if ((attributeModMultiplierCache ??= new()).TryGetValue(attribute, out var value))
                 return value;
 
             value = base.GetAttributeMod_Multiplier(attribute);
@@ -236,15 +236,15 @@ namespace ACE.Server.WorldObjects.Managers
             return value;
         }
 
-        private readonly Dictionary<CreatureVital, float> vitalModAdditiveCache = new Dictionary<CreatureVital, float>();
-        private readonly Dictionary<CreatureVital, float> vitalModMultiplierCache = new Dictionary<CreatureVital, float>();
+        private Dictionary<CreatureVital, float> vitalModAdditiveCache;
+        private Dictionary<CreatureVital, float> vitalModMultiplierCache;
 
         /// <summary>
         /// Gets the additive modifiers to a vital / secondary attribute
         /// </summary>
         public override float GetVitalMod_Additives(CreatureVital vital)
         {
-            if (vitalModAdditiveCache.TryGetValue(vital, out var value))
+            if ((vitalModAdditiveCache ??= new()).TryGetValue(vital, out var value))
                 return value;
 
             value = base.GetVitalMod_Additives(vital);
@@ -259,7 +259,7 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         public override float GetVitalMod_Multiplier(CreatureVital vital)
         {
-            if (vitalModMultiplierCache.TryGetValue(vital, out var value))
+            if ((vitalModMultiplierCache ??= new()).TryGetValue(vital, out var value))
                 return value;
 
             value = base.GetVitalMod_Multiplier(vital);
@@ -269,15 +269,15 @@ namespace ACE.Server.WorldObjects.Managers
             return value;
         }
 
-        private readonly Dictionary<Skill, int> skillModAdditiveCache = new Dictionary<Skill, int>();
-        private readonly Dictionary<Skill, float> skillModMultiplierCache = new Dictionary<Skill, float>();
+        private Dictionary<Skill, int> skillModAdditiveCache;
+        private Dictionary<Skill, float> skillModMultiplierCache;
 
         /// <summary>
         /// Returns the additive modifiers to a skill from enchantments
         /// </summary>
         public override int GetSkillMod_Additives(Skill skill)
         {
-            if (skillModAdditiveCache.TryGetValue(skill, out var value))
+            if ((skillModAdditiveCache ??= new()).TryGetValue(skill, out var value))
                 return value;
 
             value = base.GetSkillMod_Additives(skill);
@@ -292,7 +292,7 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         public override float GetSkillMod_Multiplier(Skill skill)
         {
-            if (skillModMultiplierCache.TryGetValue(skill, out var value))
+            if ((skillModMultiplierCache ??= new()).TryGetValue(skill, out var value))
                 return value;
 
             value = base.GetSkillMod_Multiplier(skill);
@@ -317,14 +317,14 @@ namespace ACE.Server.WorldObjects.Managers
             return bodyArmorModCache.Value;
         }
 
-        private readonly Dictionary<DamageType, float> resistanceModCache = new Dictionary<DamageType, float>();
+        private Dictionary<DamageType, float> resistanceModCache;
 
         /// <summary>
         /// Gets the resistance modifier for a damage type
         /// </summary>
         public override float GetResistanceMod(DamageType damageType)
         {
-            if (resistanceModCache.TryGetValue(damageType, out var value))
+            if ((resistanceModCache ??= new()).TryGetValue(damageType, out var value))
                 return value;
 
             value = base.GetResistanceMod(damageType);
@@ -334,14 +334,14 @@ namespace ACE.Server.WorldObjects.Managers
             return value;
         }
 
-        private readonly Dictionary<DamageType, float> protectionResistanceModCache = new Dictionary<DamageType, float>();
+        private Dictionary<DamageType, float> protectionResistanceModCache;
 
         /// <summary>
         /// Gets the resistance modifier for a damage type
         /// </summary>
         public override float GetProtectionResistanceMod(DamageType damageType)
         {
-            if (protectionResistanceModCache.TryGetValue(damageType, out var value))
+            if ((protectionResistanceModCache ??= new()).TryGetValue(damageType, out var value))
                 return value;
 
             value = base.GetProtectionResistanceMod(damageType);
@@ -351,14 +351,14 @@ namespace ACE.Server.WorldObjects.Managers
             return value;
         }
 
-        private readonly Dictionary<DamageType, float> vulnerabilityResistanceModCache = new Dictionary<DamageType, float>();
+        private Dictionary<DamageType, float> vulnerabilityResistanceModCache;
 
         /// <summary>
         /// Gets the resistance modifier for a damage type
         /// </summary>
         public override float GetVulnerabilityResistanceMod(DamageType damageType)
         {
-            if (vulnerabilityResistanceModCache.TryGetValue(damageType, out var value))
+            if ((vulnerabilityResistanceModCache ??= new()).TryGetValue(damageType, out var value))
                 return value;
 
             value = base.GetVulnerabilityResistanceMod(damageType);
@@ -368,7 +368,7 @@ namespace ACE.Server.WorldObjects.Managers
             return value;
         }
 
-        private readonly Dictionary<CreatureVital, float> regenerationModCache = new Dictionary<CreatureVital, float>();
+        private Dictionary<CreatureVital, float> regenerationModCache;
 
         /// <summary>
         /// Gets the regeneration modifier for a vital type
@@ -376,7 +376,7 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         public override float GetRegenerationMod(CreatureVital vital)
         {
-            if (regenerationModCache.TryGetValue(vital, out var value))
+            if ((regenerationModCache ??= new()).TryGetValue(vital, out var value))
                 return value;
 
             value = base.GetRegenerationMod(vital);
@@ -523,14 +523,14 @@ namespace ACE.Server.WorldObjects.Managers
             return armorModCache.Value;
         }
 
-        private readonly Dictionary<DamageType, float> armorModVsTypeModCache = new Dictionary<DamageType, float>();
+        private Dictionary<DamageType, float> armorModVsTypeModCache;
 
         /// <summary>
         /// Gets the additive armor level vs type modifier, ie. banes
         /// </summary>
         public override float GetArmorModVsType(DamageType damageType)
         {
-            if (armorModVsTypeModCache.TryGetValue(damageType, out var value))
+            if ((armorModVsTypeModCache ??= new()).TryGetValue(damageType, out var value))
                 return value;
 
             value = base.GetArmorModVsType(damageType);
@@ -552,11 +552,11 @@ namespace ACE.Server.WorldObjects.Managers
             return resistLockpickCache.Value;
         }
 
-        private readonly Dictionary<PropertyInt, int> ratingCache = new Dictionary<PropertyInt, int>();
+        private Dictionary<PropertyInt, int> ratingCache;
 
         public override int GetRating(PropertyInt property)
         {
-            if (ratingCache.TryGetValue(property, out var value))
+            if ((ratingCache ??= new()).TryGetValue(property, out var value))
                 return value;
 
             value = base.GetRating(property);

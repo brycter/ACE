@@ -1377,6 +1377,10 @@ namespace ACE.Server.WorldObjects
         {
             if (PhysicsObj == null || CurrentLandblock == null) return;
 
+            var nearbyPlayers = PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer();
+            if (nearbyPlayers.Count > (this is Player ? 0 : 1))
+                msg = new BroadcastMessage(msg);
+
             Player self = null;
             if (this is Player)
             {
@@ -1388,7 +1392,7 @@ namespace ACE.Server.WorldObjects
 
             var rangeSquared = range * range;
 
-            foreach (var player in PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer())
+            foreach (var player in nearbyPlayers)
             {
                 if (self != null && squelchType != null && player.SquelchManager.Squelches.Contains(self, squelchType.Value))
                     continue;
@@ -1425,13 +1429,13 @@ namespace ACE.Server.WorldObjects
                 return null;
             }
 
-            if (sendSelf)
-            {
-                if (this is Player self)
-                    self.Session.Network.EnqueueSend(msgs);
-            }
-
             var nearbyPlayers = PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer();
+            if (nearbyPlayers.Count > (sendSelf && this is Player ? 0 : 1))
+                msgs = BroadcastMessage.Capture(msgs);
+
+            if (sendSelf && this is Player self)
+                self.Session.Network.EnqueueSend(msgs);
+
             foreach (var player in nearbyPlayers)
             {
                 if (Visibility && !player.Adminvision)
@@ -1446,13 +1450,13 @@ namespace ACE.Server.WorldObjects
         {
             if (PhysicsObj == null) return null;
 
-            if (sendSelf)
-            {
-                if (this is Player self)
-                    self.Session.Network.EnqueueSend(msgs);
-            }
-
             var nearbyPlayers = PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer();
+            if (nearbyPlayers.Count > (sendSelf && this is Player ? 0 : 1))
+                msgs = BroadcastMessage.Capture(msgs);
+
+            if (sendSelf && this is Player self)
+                self.Session.Network.EnqueueSend(msgs);
+
             foreach (var player in nearbyPlayers.Except(excludePlayers))
             {
                 if (Visibility && !player.Adminvision)

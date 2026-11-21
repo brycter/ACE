@@ -83,13 +83,17 @@ namespace ACE.Server.Network
             if (DataRemaining < dataToSend)
                 throw new InvalidOperationException("More data to send then data remaining!");
 
-            // Read data starting at position reading dataToSend bytes
-            Message.Data.Seek(position, SeekOrigin.Begin);
-            byte[] data = new byte[dataToSend];
-            Message.Data.Read(data, 0, dataToSend);
+            ServerPacketFragment fragment;
+            if (Message is BroadcastMessage broadcast)
+                fragment = broadcast.CreateFragment(index, position, dataToSend);
+            else
+            {
+                Message.Data.Seek(position, SeekOrigin.Begin);
+                byte[] data = new byte[dataToSend];
+                Message.Data.Read(data, 0, dataToSend);
+                fragment = new ServerPacketFragment(data);
+            }
 
-            // Build ServerPacketFragment structure
-            ServerPacketFragment fragment = new ServerPacketFragment(data);
             fragment.Header.Sequence = Sequence;
             fragment.Header.Id = 0x80000000;
             fragment.Header.Count = Count;

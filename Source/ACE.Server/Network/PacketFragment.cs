@@ -7,8 +7,9 @@ namespace ACE.Server.Network
         public const int MaxFragmentDataSize = 448; // Packet.MaxPacketSize - PacketHeader.HeaderSize - PacketFragmentHeader.HeaderSize
 
         public PacketFragmentHeader Header { get; } = new PacketFragmentHeader();
-        public byte[] Data { get; protected set; }
+        private protected byte[] ownedData;
+        public virtual byte[] Data { get => ownedData; protected set => ownedData = value; }
 
-        public int Length => PacketFragmentHeader.HeaderSize + Data.Length;
+        public virtual int Length => PacketFragmentHeader.HeaderSize + Data.Length;
     }
 }

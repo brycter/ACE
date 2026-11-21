@@ -12,6 +12,13 @@ namespace ACE.Server.Network.GameMessages
 
         protected System.IO.BinaryWriter Writer { get; private set; }
 
+        internal GameMessage(GameMessageOpcode opCode, GameMessageGroup group, byte[] serialized)
+        {
+            Opcode = opCode;
+            Group = group;
+            Data = new System.IO.MemoryStream(serialized, writable: false);
+        }
+
         protected GameMessage(GameMessageOpcode opCode, GameMessageGroup group)
         {
             Opcode = opCode;

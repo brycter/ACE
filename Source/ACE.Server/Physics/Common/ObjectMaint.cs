@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 
@@ -43,33 +44,38 @@ namespace ACE.Server.Physics.Common
         ///
         /// - This is only maintained for players.
         /// </remarks>
-        private Dictionary<uint, PhysicsObj> KnownObjects { get; } = new Dictionary<uint, PhysicsObj>();
+        private Dictionary<uint, PhysicsObj> knownObjects;
+        private IReadOnlyDictionary<uint, PhysicsObj> KnownObjects => knownObjects is null ? ReadOnlyDictionary<uint, PhysicsObj>.Empty : knownObjects;
 
         /// <summary>
         /// This list of objects that are currently within PVS / VisibleCell range
         /// only maintained for players
         /// </summary>
-        private Dictionary<uint, PhysicsObj> VisibleObjects { get; } = new Dictionary<uint, PhysicsObj>();
+        private Dictionary<uint, PhysicsObj> visibleObjects;
+        private IReadOnlyDictionary<uint, PhysicsObj> VisibleObjects => visibleObjects is null ? ReadOnlyDictionary<uint, PhysicsObj>.Empty : visibleObjects;
 
         /// <summary>
         /// Objects that were previously visible to the client,
         /// but have been outside the PVS for less than 25 seconds
         /// only maintained for players
         /// </summary>
-        private Dictionary<PhysicsObj, double> DestructionQueue { get; } = new Dictionary<PhysicsObj, double>();
+        private Dictionary<PhysicsObj, double> destructionQueue;
+        private IReadOnlyDictionary<PhysicsObj, double> DestructionQueue => destructionQueue is null ? ReadOnlyDictionary<PhysicsObj, double>.Empty : destructionQueue;
 
         /// <summary>
         /// A list of players that currently know about this object
         /// This is maintained for all server-spawned WorldObjects, and is used for broadcasting
         /// </summary>
-        private Dictionary<uint, PhysicsObj> KnownPlayers { get; } = new Dictionary<uint, PhysicsObj>();
+        private Dictionary<uint, PhysicsObj> knownPlayers;
+        private IReadOnlyDictionary<uint, PhysicsObj> KnownPlayers => knownPlayers is null ? ReadOnlyDictionary<uint, PhysicsObj>.Empty : knownPlayers;
 
         /// <summary>
         /// For monster and CombatPet FindNextTarget
         /// - for monsters, contains players and combat pets
         /// - for combat pets, contains monsters
         /// </summary>
-        private Dictionary<uint, PhysicsObj> VisibleTargets { get; } = new Dictionary<uint, PhysicsObj>();
+        private Dictionary<uint, PhysicsObj> visibleTargets;
+        private IReadOnlyDictionary<uint, PhysicsObj> VisibleTargets => visibleTargets is null ? ReadOnlyDictionary<uint, PhysicsObj>.Empty : visibleTargets;
 
         /// <summary>
         /// Handles monsters targeting things they would not normally target
@@ -77,7 +83,8 @@ namespace ACE.Server.Physics.Common
         /// - For regular monsters, retaliate against faction mobs
         /// - For regular monsters that do *not* have a FoeType, retaliate against monsters that are foes with this creature
         /// </summary>
-        private Dictionary<uint, PhysicsObj> RetaliateTargets { get; } = new Dictionary<uint, PhysicsObj>();
+        private Dictionary<uint, PhysicsObj> retaliateTargets;
+        private IReadOnlyDictionary<uint, PhysicsObj> RetaliateTargets => retaliateTargets is null ? ReadOnlyDictionary<uint, PhysicsObj>.Empty : retaliateTargets;
 
         // Client structures -
         // When client unloads a cell/landblock, but still knows about objects in those cells?
@@ -199,7 +206,7 @@ namespace ACE.Server.Physics.Common
                 if (KnownObjects.ContainsKey(obj.ID))
                     return false;
 
-                KnownObjects.TryAdd(obj.ID, obj);
+                (knownObjects ??= new()).TryAdd(obj.ID, obj);
 
                 // maintain KnownPlayers for both parties
                 if (obj.IsPlayer)
@@ -239,7 +246,7 @@ namespace ACE.Server.Physics.Common
             rwLock.EnterWriteLock();
             try
             {
-                var result = KnownObjects.Remove(obj.ID, out _);
+                var result = knownObjects?.Remove(obj.ID) ?? false;
 
                 if (inversePlayer && PhysicsObj.IsPlayer)
                     obj.ObjMaint.RemoveKnownPlayer(PhysicsObj);
@@ -444,7 +451,7 @@ namespace ACE.Server.Physics.Common
                 }
 
                 //Console.WriteLine($"{PhysicsObj.Name}.AddVisibleObject({obj.Name})");
-                VisibleObjects.TryAdd(obj.ID, obj);
+                (visibleObjects ??= new()).TryAdd(obj.ID, obj);
 
                 if (obj.WeenieObj.IsMonster)
                     obj.ObjMaint.AddVisibleTarget(PhysicsObj, false);
@@ -494,7 +501,7 @@ namespace ACE.Server.Physics.Common
             rwLock.EnterWriteLock();
             try
             {
-                var removed = VisibleObjects.Remove(obj.ID, out _);
+                var removed = visibleObjects?.Remove(obj.ID) ?? false;
 
                 if (inverseTarget)
                     obj.ObjMaint.RemoveVisibleTarget(PhysicsObj);
@@ -554,7 +561,7 @@ namespace ACE.Server.Physics.Common
                 if (DestructionQueue.ContainsKey(obj))
                     return false;
 
-                DestructionQueue.TryAdd(obj, PhysicsTimer.CurrentTime + DestructionTime);
+                (destructionQueue ??= new()).TryAdd(obj, PhysicsTimer.CurrentTime + DestructionTime);
 
                 return true;
             }
@@ -601,7 +608,7 @@ namespace ACE.Server.Physics.Common
                 DestructionQueue.TryGetValue(obj, out time);
                 if (time != -1 && time > PhysicsTimer.CurrentTime)
                 {
-                    DestructionQueue.Remove(obj, out _);
+                    destructionQueue?.Remove(obj);
                     return true;
                 }
 
@@ -660,7 +667,7 @@ namespace ACE.Server.Physics.Common
 
                 RemoveKnownObject(obj, inverse);
                 RemoveVisibleObject(obj, inverse);
-                DestructionQueue.Remove(obj, out _);
+                destructionQueue?.Remove(obj);
 
                 if (obj.IsPlayer)
                     RemoveKnownPlayer(obj);
@@ -768,7 +775,7 @@ namespace ACE.Server.Physics.Common
             if (KnownPlayers.ContainsKey(obj.ID))
                 return false;
 
-            KnownPlayers.TryAdd(obj.ID, obj);
+            (knownPlayers ??= new()).TryAdd(obj.ID, obj);
             return true;
         }
 
@@ -803,14 +810,14 @@ namespace ACE.Server.Physics.Common
         {
             //Console.WriteLine($"{PhysicsObj.Name} ({PhysicsObj.ID:X8}).ObjectMaint.RemoveKnownPlayer({obj.Name})");
 
-            rwLock.EnterReadLock();
+            rwLock.EnterWriteLock();
             try
             {
-                return KnownPlayers.Remove(obj.ID, out _);
+                return knownPlayers?.Remove(obj.ID) ?? false;
             }
             finally
             {
-                rwLock.ExitReadLock();
+                rwLock.ExitWriteLock();
             }
         }
 
@@ -979,7 +986,7 @@ namespace ACE.Server.Physics.Common
 
             //Console.WriteLine($"{PhysicsObj.Name} ({PhysicsObj.ID:X8}).ObjectMaint.AddVisibleTarget({obj.Name})");
 
-            VisibleTargets.Add(obj.ID, obj);
+            (visibleTargets ??= new()).Add(obj.ID, obj);
 
             // maintain inverse for monsters / combat pets
             if (!obj.IsPlayer)
@@ -1017,7 +1024,7 @@ namespace ACE.Server.Physics.Common
         private bool RemoveVisibleTarget(PhysicsObj obj)
         {
             //Console.WriteLine($"{PhysicsObj.Name} ({PhysicsObj.ID:X8}).ObjectMaint.RemoveVisibleTarget({obj.Name})");
-            return VisibleTargets.Remove(obj.ID);
+            return visibleTargets?.Remove(obj.ID) ?? false;
         }
 
         public List<PhysicsObj> GetVisibleObjectsDist(ObjCell cell, VisibleObjectType type)
@@ -1058,7 +1065,7 @@ namespace ACE.Server.Physics.Common
                     return;
                 }
                 //Console.WriteLine($"{PhysicsObj.Name}.AddRetaliateTarget({obj.Name})");
-                RetaliateTargets.Add(obj.ID, obj);
+                (retaliateTargets ??= new()).Add(obj.ID, obj);
 
                 // we're going to add retaliate targets to the list of visible targets as well,
                 // so that we don't have to traverse both VisibleTargets and RetaliateTargets
@@ -1068,7 +1075,7 @@ namespace ACE.Server.Physics.Common
                     //Console.WriteLine($"{PhysicsObj.Name}.AddRetaliateTarget({obj.Name}) - visible target already exists");
                     return;
                 }
-                VisibleTargets.Add(obj.ID, obj);
+                (visibleTargets ??= new()).Add(obj.ID, obj);
             }
             finally
             {
@@ -1086,9 +1093,9 @@ namespace ACE.Server.Physics.Common
             {
                 // remove retaliate targets from visible targets
                 foreach (var retaliateTarget in RetaliateTargets)
-                    VisibleTargets.Remove(retaliateTarget.Key);
+                    visibleTargets?.Remove(retaliateTarget.Key);
 
-                RetaliateTargets.Clear();
+                retaliateTargets?.Clear();
             }
             finally
             {
@@ -1098,7 +1105,7 @@ namespace ACE.Server.Physics.Common
 
         private bool RemoveRetaliateTarget(PhysicsObj obj)
         {
-            return RetaliateTargets.Remove(obj.ID);
+            return retaliateTargets?.Remove(obj.ID) ?? false;
         }
 
         /// <summary>
@@ -1106,12 +1113,12 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         private void RemoveAllObjects()
         {
-            KnownObjects.Clear();
-            VisibleObjects.Clear();
-            DestructionQueue.Clear();
-            KnownPlayers.Clear();
-            VisibleTargets.Clear();
-            RetaliateTargets.Clear();
+            knownObjects?.Clear();
+            visibleObjects?.Clear();
+            destructionQueue?.Clear();
+            knownPlayers?.Clear();
+            visibleTargets?.Clear();
+            retaliateTargets?.Clear();
         }
 
         /// <summary>
