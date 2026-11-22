@@ -18,13 +18,14 @@ internal static partial class Program
     }
 
     static DoorwayWalker[] doorwayWalkers;
+    static DoorwayTrace doorwayTrace;
     static uint adjacentCell;
     static Vector3 doorwayCenter, outbound, across;
 
     static void StartDoorwayFight(int count)
     {
-        if (!ConfigManager.Config.Server.ServerAuthoritativeMovement)
-            throw new InvalidOperationException("The doorway workload requires server movement authority.");
+        if (!ConfigManager.Config.Server.ServerAuthoritativeMovement && doorwayTrace?.IsReplay != true)
+            throw new InvalidOperationException("Record with server movement authority or replay a recorded doorway route.");
         var room = (EnvCell)ObjCell.GetVisible(Cell);
         var origin = Spot(0).Pos;
         float nearest = float.PositiveInfinity;
@@ -107,7 +108,7 @@ internal static partial class Program
             if (progress >= 1.4f) walker.Outbound = false;
             if (progress <= -1.4f) walker.Outbound = true;
             report.Rotate(walker.Outbound ? outbound : -outbound);
-            Move(Players[i], report, 0);
+            Move(Players[i], doorwayTrace?.Exchange(i, report) ?? report, 0);
         }
     }
 

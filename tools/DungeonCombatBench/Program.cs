@@ -60,7 +60,8 @@ internal static partial class Program
         bool course = args.Length == 6 && args[5] == "--check-movement";
         bool movingWorld = args.Length == 6 && args[5] == "--moving-world-loop";
         bool nativeLoop = movingWorld || args.Length == 6 && args[5] == "--world-loop";
-        bool movingFight = movingWorld || args.Length == 6 && args[5] == "--moving-fight";
+        bool traceFight = args.Length == 7 && (args[5] == "--record-doorway" || args[5] == "--replay-doorway");
+        bool movingFight = movingWorld || traceFight || args.Length == 6 && args[5] == "--moving-fight";
         if (args.Length != 4 && args.Length != 5 && !course && !nativeLoop && !movingFight)
             throw new ArgumentException("Expected isolated Config.js, player count, measured seconds and result path.");
         int count = int.Parse(args[1]), seconds = int.Parse(args[2]);
@@ -69,6 +70,10 @@ internal static partial class Program
         foreground = count;
         int total = args.Length >= 5 ? int.Parse(args[4]) : count;
         if (total < count || total > 1152) throw new ArgumentOutOfRangeException(nameof(total));
+        if (traceFight && string.Equals(Path.GetFullPath(args[3]), Path.GetFullPath(args[6]), StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Use different paths for the measurement JSON and the input trace.");
+        using var trace = traceFight ? new DoorwayTrace(args[6], args[5] == "--replay-doorway", count, seconds) : null;
+        doorwayTrace = trace;
         SeedFight();
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         ConfigManager.Initialize(args[0]);
@@ -259,6 +264,7 @@ internal static partial class Program
                 allocatedBytes = allocated, heapStart, liveHeap, privateStart, privateEnd, workingSetStart, workingSetEnd, occupiedCells,
                 processPeakWorkingSet = process.PeakWorkingSet64, p99TickMs = ticks[(int)Math.Ceiling(ticks.Length * .99)-1],
                 serverGc = System.Runtime.GCSettings.IsServerGC, runtime = Environment.Version.ToString() };
+            trace?.Complete();
             File.WriteAllText(args[3], JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         }
         finally { DatabaseManager.Stop(); }

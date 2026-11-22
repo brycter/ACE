@@ -12,6 +12,15 @@ Run `dotnet DungeonCombatBench.dll --shadow-tour tour.json` for the isolated ret
 
 Use `--moving-world-loop` in place of `--moving-fight` to drive the same fighters through ACE’s normal world scheduler. Its p99 measures time from an input batch’s scheduled deadline to completion on the world thread.
 
+To compare the cost of authority against default movement, record a valid route while authority is enabled. Then replay those foreground reports through the same game-action handler with authority disabled. Each pair uses the same fighter count and duration. Both runs check that every local fighter actually moved through the doorway. Recording and replay take place in memory during combat.
+
+```powershell
+dotnet DungeonCombatBench.dll authority.js 200 20 authority.json 1024 --record-doorway event.adr
+dotnet DungeonCombatBench.dll default.js 200 20 default.json 1024 --replay-doorway event.adr
+```
+
+The [authority comparison](AUTHORITY-RESULTS.md) includes the matched routes, the effective worker counts, and a profile of the 200-fighter event.
+
 ## Fixture
 
 Use a disposable ACE database instance on a nondefault loopback port. Initialize the authentication, world and shard schemas from the server revision under test. Import stock weenies 1 (Human), 1629 (Tusker Guard), 45, 273, 2623, 2470 and 5134. A minimal world schema without other spawns keeps the encounter reproducible. The supplied DATs must include the dungeon geometry. The harness creates one synthetic authentication account and can run ordinary shard save operations.
