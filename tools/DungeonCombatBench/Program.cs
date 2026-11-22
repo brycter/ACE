@@ -54,11 +54,14 @@ internal static partial class Program
 
     static void Main(string[] args)
     {
+        if (args.Length == 2 && args[0] == "--shadow-tour") { ShadowTour.Run(args[1]); return; }
         if (args.Length == 1 && args[0] == "--fixture-peers") { ConnectedClients.RunPeers().GetAwaiter().GetResult(); return; }
         if (args.Length == 1 && args[0] == "--receive") { LoopbackSink.Receive(); return; }
         bool course = args.Length == 6 && args[5] == "--check-movement";
-        bool nativeLoop = args.Length == 6 && args[5] == "--world-loop";
-        if (args.Length != 4 && args.Length != 5 && !course && !nativeLoop)
+        bool movingWorld = args.Length == 6 && args[5] == "--moving-world-loop";
+        bool nativeLoop = movingWorld || args.Length == 6 && args[5] == "--world-loop";
+        bool movingFight = movingWorld || args.Length == 6 && args[5] == "--moving-fight";
+        if (args.Length != 4 && args.Length != 5 && !course && !nativeLoop && !movingFight)
             throw new ArgumentException("Expected isolated Config.js, player count, measured seconds and result path.");
         int count = int.Parse(args[1]), seconds = int.Parse(args[2]);
         if (count < 2 || count > 256 || seconds < 1 || seconds > 300)
@@ -90,6 +93,7 @@ internal static partial class Program
             var endpoint = receiver?.Endpoint;
             var room = LandblockManager.GetLandblock(new LandblockId(Cell), false, true);
             if (!room.PhysicsLandblock.IsDungeon) throw new InvalidOperationException("Expected indoor physics.");
+            if (movingFight) StartDoorwayFight(count);
             var account = DatabaseManager.Authentication.GetAccountByName("dungeon-bench") ??
                 DatabaseManager.Authentication.CreateAccount("dungeon-bench", Guid.NewGuid().ToString(), AccessLevel.Player, IPAddress.Loopback);
             var human = DatabaseManager.World.GetCachedWeenie(1u);
@@ -106,7 +110,7 @@ internal static partial class Program
                 player.Name = character.Name;
                 int area = (i - count) / 32;
                 var localRoom = room;
-                if (i < count) player.Location = Spot(i);
+                if (i < count) player.Location = movingFight ? DoorwayStart(i) : Spot(i);
                 else
                 {
                     var position = new ACE.Entity.Position(BenchmarkRooms.Arrivals[area]);
@@ -157,7 +161,7 @@ internal static partial class Program
             for (int i = 0; i < 4; i++)
             {
                 var monster = new Creature(tusker, new ObjectGuid((uint)(0x90010000 + i)));
-                monster.Location = Spot(i + count);
+                monster.Location = movingFight ? DoorwayStart(i, monster: true) : Spot(i + count);
                 monster.Tolerance = Tolerance.NoAttack;
                 monster.AttackHeight = AttackHeight.Medium;
                 monster.Health.StartingValue = 100000;
@@ -212,6 +216,7 @@ internal static partial class Program
                 return;
             }
             Run(3 * Hz);
+            if (movingFight) ResetDoorwayMetrics();
             GC.Collect(2, GCCollectionMode.Forced, true, true);
             var process = Process.GetCurrentProcess();
             process.Refresh();
@@ -233,6 +238,7 @@ internal static partial class Program
             process.Refresh();
             long privateEnd = process.PrivateMemorySize64, workingSetEnd = process.WorkingSet64;
             var liveHeap = GC.GetTotalMemory(true);
+            var doorway = movingFight ? DoorwayResults() : null;
             long totalPacketsSent = NetworkStatistics.S2C_Packets_Aggregate;
             int online = peers == null ? 0 : PlayerManager.GetOnlineCount();
             int authenticated = peers == null ? 0 : NetworkManager.GetAuthenticatedSessionCount();
@@ -245,7 +251,7 @@ internal static partial class Program
             Array.Sort(ticks);
             if (hits == 0 || returnedHits == 0 || packets < count) throw new InvalidOperationException("Incomplete fight.");
             var result = new { authoritativeMovement = cfg.Server.ServerAuthoritativeMovement, positionCorrectionVerified, serverJumpVerified, players = count, total, online, authenticated, minSessions = peers == null ? 0 : minSessions,
-                counts, maxBackgroundObservers, backgroundAreas = otherMonsters.Count, backgroundAttempts, backgroundHits,
+                counts, doorway, maxBackgroundObservers, backgroundAreas = otherMonsters.Count, backgroundAttempts, backgroundHits,
                 moveRequests, appliedMoves, overBudgetTicks = ticks.Count(x => x > 1000.0 / Hz),
                 p999TickMs = ticks[(int)Math.Ceiling(ticks.Length * .999)-1], maxTickMs = ticks[^1],
                 clientCrcErrors = NetworkStatistics.C2S_CRCErrors_Aggregate, monsters = Monsters.Count, cell = Cell.ToString("X8"), observersMin,
@@ -327,6 +333,7 @@ internal static partial class Program
 
     static void DrivePlayers(int tick)
     {
+        if (doorwayWalkers != null) WalkDoorway(tick);
         // Offset attack phases so a larger population increases traffic at a constant per-player rate.
         for (int i = tick % 30; i < foreground; i += 30)
         {

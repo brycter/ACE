@@ -6,6 +6,12 @@ Each fighter attempts two unarmed attacks per second. A Tusker responds to each 
 
 The [benchmark results](RESULTS.md) include the individual runs and the separate broadcast-only and cache-only builds at 256 players.
 
+The [physics results](PHYSICS-RESULTS.md) compare collision transition initialization and cell registration changes with 1,024 connected clients. To repeat the moving encounter, enable `Server.ServerAuthoritativeMovement` and append `--moving-fight` after the connected population argument. For example, use `Config.js 200 30 event.json 1024 --moving-fight`. The runner locates a shared doorway in the stock dungeon geometry, sends walk input through the normal game-action handler, and validates server-observed movement and crossings for each foreground fighter. The scheduled tick count is fixed. The JSON includes actual elapsed time when ticks overrun.
+
+Run `dotnet DungeonCombatBench.dll --shadow-tour tour.json` for the isolated retention check. It exercises the position-commit method on 1,024 physics objects across 256 synthetic cells for three laps. The tour supplies the resolved cell to isolate registration costs. It requires no database or DATs.
+
+Use `--moving-world-loop` in place of `--moving-fight` to drive the same fighters through ACE’s normal world scheduler. Its p99 measures time from an input batch’s scheduled deadline to completion on the world thread.
+
 ## Fixture
 
 Use a disposable ACE database instance on a nondefault loopback port. Initialize the authentication, world and shard schemas from the server revision under test. Import stock weenies 1 (Human), 1629 (Tusker Guard), 45, 273, 2623, 2470 and 5134. A minimal world schema without other spawns keeps the encounter reproducible. The supplied DATs must include the dungeon geometry. The harness creates one synthetic authentication account and can run ordinary shard save operations.

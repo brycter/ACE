@@ -27,7 +27,8 @@ internal static partial class Program
             var allocated = GC.GetTotalAllocatedBytes(true);
             var cpu = process.TotalProcessorTime;
             var elapsed = Stopwatch.StartNew();
-            var delays = ScheduleInputs(seconds * Hz, total);
+            var serviceTimes = new double[seconds * Hz];
+            var delays = ScheduleInputs(seconds * Hz, total, resetDoorway: doorwayWalkers != null, serviceTimes: serviceTimes);
             elapsed.Stop();
             var cpuMs = (process.TotalProcessorTime - cpu).TotalMilliseconds;
             allocated = GC.GetTotalAllocatedBytes(true) - allocated;
@@ -36,19 +37,22 @@ internal static partial class Program
             var privateBytes = process.PrivateMemorySize64;
             var liveHeap = GC.GetTotalMemory(true);
             StopAndJoinWorld();
+            var doorway = doorwayWalkers != null ? DoorwayResults() : null;
             if (NetworkManager.GetAuthenticatedSessionCount() != total || PlayerManager.GetOnlineCount() != total ||
                 minSessions != total || peers.Sessions.Any(s => s.State != SessionState.WorldConnected || s.PendingTermination != null))
                 throw new InvalidOperationException("World loop lost a participant.");
             var totalPacketsSent = NetworkStatistics.S2C_Packets_Aggregate;
             var counts = peers.Finish();
             Array.Sort(delays);
+            Array.Sort(serviceTimes);
             return new { scheduler = "WorldManager.Initialize", total, foreground, seconds,
                 authority = ConfigManager.Config.Server.ServerAuthoritativeMovement,
                 authenticated = NetworkManager.GetAuthenticatedSessionCount(), online = PlayerManager.GetOnlineCount(),
-                minSessions, counts, totalPacketsSent, cpuMs, elapsedMs = elapsed.Elapsed.TotalMilliseconds,
+                minSessions, counts, doorway, totalPacketsSent, cpuMs, elapsedMs = elapsed.Elapsed.TotalMilliseconds,
                 workingSet, privateBytes, liveHeap, allocated, attempts, hits, returnedHits, backgroundAttempts, backgroundHits,
                 moveRequests, appliedMoves, positionCorrectionVerified = corrected, serverJumpVerified = jumped,
                 p99ScheduledInputMs = delays[(int)Math.Ceiling(delays.Length * .99) - 1], worstScheduledInputMs = delays[^1],
+                p99EnqueueToCompletionMs = serviceTimes[(int)Math.Ceiling(serviceTimes.Length * .99) - 1],
                 inputsOverBudget = delays.Count(t => t > 1000d / Hz), inputBatches = delays.Length,
                 crcErrors = NetworkStatistics.C2S_CRCErrors_Aggregate };
         }
@@ -62,7 +66,7 @@ internal static partial class Program
             throw new TimeoutException("The world thread failed to finish its current loop.");
     }
 
-    static double[] ScheduleInputs(int count, int expected)
+    static double[] ScheduleInputs(int count, int expected, bool resetDoorway = false, double[] serviceTimes = null)
     {
         var timings = new double[count];
         var timer = Stopwatch.StartNew();
@@ -72,14 +76,18 @@ internal static partial class Program
             double due = tick * (1000d / Hz);
             while (timer.Elapsed.TotalMilliseconds < due) Thread.Sleep(1);
             var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            long enqueued = Stopwatch.GetTimestamp();
             WorldManager.EnqueueAction(new ActionEventDelegate(() =>
             {
                 try
                 {
+                    if (resetDoorway && tick == 0) ResetDoorwayMetrics();
                     DrivePlayers(tick);
                     if (tick % Hz == 0)
                         minSessions = Math.Min(minSessions, NetworkManager.GetSessionCount());
                     timings[tick] = timer.Elapsed.TotalMilliseconds - due;
+                    if (serviceTimes != null)
+                        serviceTimes[tick] = Stopwatch.GetElapsedTime(enqueued).TotalMilliseconds;
                     completed.SetResult();
                 }
                 catch (Exception ex) { completed.SetException(ex); }
