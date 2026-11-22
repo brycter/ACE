@@ -7,6 +7,8 @@ namespace ACE.Database.Models.Auth;
 
 public partial class AuthDbContext : DbContext
 {
+    private static readonly ServerVersionCache versionCache = new();
+
     public AuthDbContext()
     {
     }
@@ -28,7 +30,7 @@ public partial class AuthDbContext : DbContext
 
             var connectionString = $"server={config.Host};port={config.Port};user={config.Username};password={config.Password};database={config.Database};{config.ConnectionOptions}";
 
-            optionsBuilder.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString), builder =>
+            optionsBuilder.UseMySql(connectionString, versionCache.Get(connectionString), builder =>
             {
                 builder.EnableRetryOnFailure(10);
             });

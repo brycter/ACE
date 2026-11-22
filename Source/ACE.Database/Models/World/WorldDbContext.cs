@@ -7,6 +7,8 @@ namespace ACE.Database.Models.World;
 
 public partial class WorldDbContext : DbContext
 {
+    private static readonly ServerVersionCache versionCache = new();
+
     public WorldDbContext()
     {
     }
@@ -132,7 +134,7 @@ public partial class WorldDbContext : DbContext
 
             var connectionString = $"server={config.Host};port={config.Port};user={config.Username};password={config.Password};database={config.Database};{config.ConnectionOptions}";
 
-            optionsBuilder.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString), builder =>
+            optionsBuilder.UseMySql(connectionString, versionCache.Get(connectionString), builder =>
             {
                 builder.EnableRetryOnFailure(10);
             });

@@ -7,6 +7,8 @@ namespace ACE.Database.Models.Shard;
 
 public partial class ShardDbContext : DbContext
 {
+    private static readonly ServerVersionCache versionCache = new();
+
     public ShardDbContext()
     {
     }
@@ -104,7 +106,7 @@ public partial class ShardDbContext : DbContext
 
             var connectionString = $"server={config.Host};port={config.Port};user={config.Username};password={config.Password};database={config.Database};{config.ConnectionOptions}";
 
-            optionsBuilder.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString), builder =>
+            optionsBuilder.UseMySql(connectionString, versionCache.Get(connectionString), builder =>
             {
                 builder.EnableRetryOnFailure(10);
             });
