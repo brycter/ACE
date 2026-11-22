@@ -208,11 +208,7 @@ namespace ACE.Server.Physics
             if (objCell == null) return;
 
             NumShadowObjects = 1;
-            var shadowObj = new ShadowObj(this, objCell);
-            objCell.AddShadowObject(shadowObj);
-
-            if (PartArray != null)
-                PartArray.AddPartsShadow(objCell, 1);
+            add_shadows_to_cell(objCell);
         }
 
         public void AddPartToShadowCells(PhysicsPart part)
@@ -1002,9 +998,9 @@ namespace ACE.Server.Physics
             if (PartArray != null && !State.HasFlag(PhysicsState.ParticleEmitter))
                 PartArray.SetCellID(0);
             CurCell = null;
-            if (objCell != null)
+            if (objCell != null && ShadowObjects.Remove(objCell.ID, out var shadow))
             {
-                objCell.remove_shadow_object(ShadowObjects[0]);
+                objCell.remove_shadow_object(shadow);
                 NumShadowObjects = 0;
                 if (PartArray != null)
                     PartArray.RemoveParts(objCell);
@@ -1265,7 +1261,6 @@ namespace ACE.Server.Physics
 
                 if (transition.CellArray.Cells.Count > 0)
                 {
-                    remove_shadows_from_cells();
                     add_shadows_to_cell(transition.CellArray);
 
                     return true;
@@ -1969,25 +1964,24 @@ namespace ACE.Server.Physics
         public void add_shadows_to_cell(CellArray cellArray)
         {
             if (State.HasFlag(PhysicsState.ParticleEmitter))
+            {
+                // Particle shadows belong to the part system and use a single synthetic key.
+                DetachOwnShadows();
                 add_particle_shadow_to_cell();
+            }
             else
             {
-                foreach (var cell in cellArray.Cells.Values)
+                foreach (var entry in ShadowObjects)
                 {
-                    if (cell == null) continue; // fixme
-
-                    var shadowObj = new ShadowObj(this, cell);
-                    if (!ShadowObjects.ContainsKey(cell.ID))
-                        ShadowObjects.Add(cell.ID, shadowObj);
-                    else
-                        ShadowObjects[cell.ID] = shadowObj;
-
-                    if (cell != null) cell.AddShadowObject(shadowObj);
-
-                    if (PartArray != null)
-                        PartArray.AddPartsShadow(cell, NumShadowObjects);
-
+                    var oldCell = entry.Value.Cell;
+                    if (oldCell != null && cellArray.Cells.TryGetValue(entry.Key, out var nextCell) &&
+                        ReferenceEquals(oldCell, nextCell))
+                        continue;
+                    DetachShadow(entry.Value);
+                    ShadowObjects.Remove(entry.Key);
                 }
+                foreach (var cell in cellArray.Cells.Values)
+                    if (cell != null) add_shadows_to_cell(cell);
             }
             if (Children != null)
             {
@@ -1998,16 +1992,19 @@ namespace ACE.Server.Physics
 
         public void add_shadows_to_cell(ObjCell cell)
         {
-            var shadowObj = new ShadowObj(this, cell);
-            if (!ShadowObjects.ContainsKey(cell.ID))
-                ShadowObjects.Add(cell.ID, shadowObj);
-            else
-                ShadowObjects[cell.ID] = shadowObj;
-
-            if (cell != null) cell.AddShadowObject(shadowObj);
-
-            if (PartArray != null)
-                PartArray.AddPartsShadow(cell, NumShadowObjects);
+            if (ShadowObjects.TryGetValue(cell.ID, out var existing))
+            {
+                if (ReferenceEquals(existing.Cell, cell))
+                {
+                    cell.RefreshShadowOrder(existing);
+                    return;
+                }
+                DetachShadow(existing);
+            }
+            var shadow = new ShadowObj(this, cell);
+            ShadowObjects[cell.ID] = shadow;
+            cell.AddShadowObject(shadow);
+            PartArray?.AddPartsShadow(cell, NumShadowObjects);
         }
 
         public void add_voyeur(uint objectID, float radius, double quantum)
@@ -2100,7 +2097,6 @@ namespace ACE.Server.Physics
                     ObjCell.find_cell_list(Position, sphere, CellArray, null);
                 }
             }
-            remove_shadows_from_cells();
             add_shadows_to_cell(CellArray);
         }
 
@@ -2113,7 +2109,6 @@ namespace ACE.Server.Physics
             else
                 find_bbox_cell_list(CellArray);
 
-            remove_shadows_from_cells();
             add_shadows_to_cell(CellArray);
         }
 
@@ -3225,27 +3220,28 @@ namespace ACE.Server.Physics
                 PartArray.RemoveParts(objCell);
         }
 
+        private void DetachShadow(ShadowObj shadow)
+        {
+            var cell = shadow.Cell;
+            if (cell == null) return;
+            cell.remove_shadow_object(shadow);
+            PartArray?.RemoveParts(cell);
+        }
+
+        private void DetachOwnShadows()
+        {
+            foreach (var shadow in ShadowObjects.Values)
+                DetachShadow(shadow);
+            ShadowObjects.Clear();
+            NumShadowObjects = 0;
+        }
+
         public void remove_shadows_from_cells()
         {
-            foreach (var shadowObj in ShadowObjects.Values)
-            {
-                if (shadowObj.Cell == null) continue;
-                var cell = shadowObj.Cell;
-                shadowObj.Cell.remove_shadow_object(shadowObj);
-                if (PartArray != null)
-                    PartArray.RemoveParts(cell);
-            }
-            NumShadowObjects = 0;   // should be ShadowObjects.Count
-            var i = 0;
-            while (true)
-            {
-                var totalChilds = Children == null ? 0 : Children.NumObjects;
-                if (i >= totalChilds) break;
-                if (Children != null)
-                    Children.Objects[i++].remove_shadows_from_cells();
-                else
-                    remove_shadows_from_cells();
-            }
+            DetachOwnShadows();
+            if (Children != null)
+                foreach (var child in Children.Objects)
+                    child.remove_shadows_from_cells();
         }
 
         public void remove_visible_cells()

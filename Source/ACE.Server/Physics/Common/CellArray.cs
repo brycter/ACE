@@ -16,6 +16,7 @@ namespace ACE.Server.Physics.Common
 
         public void SetStatic()
         {
+            Cells.Clear();
             AddedOutside = false;
             LoadCells = false;
             NumCells = 0;
@@ -23,6 +24,7 @@ namespace ACE.Server.Physics.Common
 
         public void SetDynamic()
         {
+            Cells.Clear();
             AddedOutside = false;
             LoadCells = true;
             NumCells = 0;

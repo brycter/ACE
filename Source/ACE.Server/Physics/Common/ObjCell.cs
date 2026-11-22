@@ -108,6 +108,21 @@ namespace ACE.Server.Physics.Common
             }
         }
 
+        internal void RefreshShadowOrder(ShadowObj shadow)
+        {
+            // Collision traversal is newest first. Keep the same priority as removal and reinsertion.
+            readerWriterLockSlim.EnterWriteLock();
+            try
+            {
+                if (ShadowObjectList.Count > 0 && ShadowObjectList[^1] != shadow && ShadowObjectList.Remove(shadow))
+                    ShadowObjectList.Add(shadow);
+            }
+            finally
+            {
+                readerWriterLockSlim.ExitWriteLock();
+            }
+        }
+
         public void CheckAttack(uint attackerID, Position attackerPos, float attackerScale, AttackCone attackCone, AttackInfo attackInfo)
         {
             readerWriterLockSlim.EnterReadLock();
@@ -523,6 +538,9 @@ namespace ACE.Server.Physics.Common
                 while (NumShadowObjects > 0)
                 {
                     var shadowObj = ShadowObjectList[0];
+                    var owner = shadowObj.PhysicsObj;
+                    if (owner.ShadowObjects.TryGetValue(ID, out var registered) && ReferenceEquals(registered, shadowObj))
+                        owner.ShadowObjects.Remove(ID);
                     remove_shadow_object(shadowObj);
 
                     shadowObj.PhysicsObj.remove_parts(this);
@@ -543,9 +561,9 @@ namespace ACE.Server.Physics.Common
             try
             {
                 // multiple shadows?
-                ShadowObjectList.Remove(shadowObj);
+                if (ShadowObjectList.Remove(shadowObj))
+                    NumShadowObjects--;
                 shadowObj.Cell = null;
-                NumShadowObjects--;
             }
             finally
             {
