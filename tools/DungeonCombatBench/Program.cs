@@ -27,7 +27,7 @@ using StoredBiota = ACE.Database.Models.Shard.Biota;
 
 // An in-process fight in stock Holtburg Dungeon. Use a disposable loopback database.
 // Players, monsters, visibility, damage, world ticks and UDP sends use server code.
-internal static class Program
+internal static partial class Program
 {
     const uint Cell = 0x01F60289;
     const int Hz = 60;
@@ -56,13 +56,15 @@ internal static class Program
     {
         if (args.Length == 1 && args[0] == "--fixture-peers") { ConnectedClients.RunPeers().GetAwaiter().GetResult(); return; }
         if (args.Length == 1 && args[0] == "--receive") { LoopbackSink.Receive(); return; }
-        if (args.Length != 4 && args.Length != 5)
+        bool course = args.Length == 6 && args[5] == "--check-movement";
+        bool nativeLoop = args.Length == 6 && args[5] == "--world-loop";
+        if (args.Length != 4 && args.Length != 5 && !course && !nativeLoop)
             throw new ArgumentException("Expected isolated Config.js, player count, measured seconds and result path.");
         int count = int.Parse(args[1]), seconds = int.Parse(args[2]);
         if (count < 2 || count > 256 || seconds < 1 || seconds > 300)
             throw new ArgumentOutOfRangeException(nameof(args));
         foreground = count;
-        int total = args.Length == 5 ? int.Parse(args[4]) : count;
+        int total = args.Length >= 5 ? int.Parse(args[4]) : count;
         if (total < count || total > 1152) throw new ArgumentOutOfRangeException(nameof(total));
         SeedFight();
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
@@ -82,7 +84,7 @@ internal static class Program
             _ = WorldManager.ActionQueue;
             SocketManager.Initialize();
             var listeners = (ConnectionListener[])typeof(SocketManager).GetField("listeners", BindingFlags.Static | BindingFlags.NonPublic).GetValue(null);
-            using var peers = args.Length == 5 ? new ConnectedClients(total) : null;
+            using var peers = args.Length >= 5 ? new ConnectedClients(total) : null;
             connected = peers;
             using var receiver = peers == null ? new LoopbackSink() : null;
             var endpoint = receiver?.Endpoint;
@@ -194,6 +196,20 @@ internal static class Program
                 if (jump.Velocity.Z <= 0 || Math.Abs(jump.Velocity.Z - expectedZ) > 0.001f)
                     throw new InvalidOperationException($"Jump speed differs from server calculation ({jump.Velocity.Z} vs {expectedZ}).");
                 serverJumpVerified = true;
+            }
+            if (nativeLoop)
+            {
+                var nativeResult = ExerciseWorldLoop(total, seconds, peers, positionCorrectionVerified, serverJumpVerified);
+                File.WriteAllText(args[3], JsonSerializer.Serialize(nativeResult, new JsonSerializerOptions { WriteIndented = true }));
+                return;
+            }
+            if (course)
+            {
+                if (!cfg.Server.ServerAuthoritativeMovement) throw new InvalidOperationException("The movement course requires authority.");
+                var checks = CheckMovementCourse(Players[count - 1]);
+                var clientCounts = peers.Finish();
+                File.WriteAllText(args[3], JsonSerializer.Serialize(new { checks, clientCounts }, new JsonSerializerOptions { WriteIndented = true }));
+                return;
             }
             Run(3 * Hz);
             GC.Collect(2, GCCollectionMode.Forced, true, true);
@@ -309,6 +325,51 @@ internal static class Program
         GameActionMoveToState.Handle(new ClientMessage(stream), player.Session);
     }
 
+    static void DrivePlayers(int tick)
+    {
+        // Offset attack phases so a larger population increases traffic at a constant per-player rate.
+        for (int i = tick % 30; i < foreground; i += 30)
+        {
+            var player = Players[i];
+            var mob = Monsters[i % Monsters.Count];
+            if (mob.Health.Current < 10) mob.UpdateVital(mob.Health, mob.Health.MaxValue);
+            if (player.Health.Current < 10) player.UpdateVital(player.Health, player.Health.MaxValue);
+            player.EnqueueBroadcastMotion(Swing, applyPhysics: false);
+            attempts++;
+            if (player.DamageTarget(mob, player)?.HasDamage == true) hits++;
+            mob.EnqueueBroadcastMotion(Swing, applyPhysics: false);
+            if (player.TakeDamage(mob, DamageType.Bludgeon, 1, BodyPart.Chest) > 0) returnedHits++;
+        }
+        if (connected != null)
+        {
+            // One quarter of the distributed population fights twice a second.
+            for (int j = tick % 30; foreground + j * 4 < Players.Count; j += 30)
+            {
+                var player = Players[foreground + j * 4];
+                var mob = otherMonsters[j / 8];
+                if (mob.Health.Current < 10) mob.UpdateVital(mob.Health, mob.Health.MaxValue);
+                player.EnqueueBroadcastMotion(Swing, applyPhysics: false);
+                backgroundAttempts++;
+                if (player.DamageTarget(mob, player)?.HasDamage == true) backgroundHits++;
+                mob.EnqueueBroadcastMotion(Swing, applyPhysics: false);
+                player.TakeDamage(mob, DamageType.Bludgeon, 1, BodyPart.Chest);
+            }
+            // A different quarter sends a staggered walking-position update every second.
+            for (int j = tick % Hz; foreground + j * 4 + 1 < Players.Count; j += Hz)
+            {
+                int index = foreground + j * 4 + 1;
+                var player = Players[index];
+                if (player.Location.SquaredDistanceTo(previousPositions[index]) > 0.0025f) appliedMoves++;
+                previousPositions[index] = new ACE.Entity.Position(player.Location);
+                var report = new ACE.Entity.Position(places[index]);
+                int phase = tick / Hz % 4;
+                report.PositionY += phase == 1 || phase == 2 ? 2.5f : 0;
+                Move(player, report, phase);
+                moveRequests++;
+            }
+        }
+    }
+
     static double[] Run(int tickCount)
     {
         var timings = new double[tickCount];
@@ -319,46 +380,9 @@ internal static class Program
             while (Clock.Elapsed.TotalSeconds < due) Thread.Sleep(1);
             var stamp = Stopwatch.GetTimestamp();
             SetTime(Timers.WorldStartLoreTime.Ticks + Clock.Elapsed.TotalSeconds);
-            // Offset attack phases so a larger population increases traffic at a constant per-player rate.
-            for (int i = tick % 30; i < foreground; i += 30)
-            {
-                var player = Players[i];
-                var mob = Monsters[i % Monsters.Count];
-                if (mob.Health.Current < 10) mob.UpdateVital(mob.Health, mob.Health.MaxValue);
-                if (player.Health.Current < 10) player.UpdateVital(player.Health, player.Health.MaxValue);
-                player.EnqueueBroadcastMotion(Swing, applyPhysics: false);
-                attempts++;
-                if (player.DamageTarget(mob, player)?.HasDamage == true) hits++;
-                mob.EnqueueBroadcastMotion(Swing, applyPhysics: false);
-                if (player.TakeDamage(mob, DamageType.Bludgeon, 1, BodyPart.Chest) > 0) returnedHits++;
-            }
+            DrivePlayers(tick);
             if (connected != null)
             {
-                // One quarter of the distributed population fights twice a second.
-                for (int j = tick % 30; foreground + j * 4 < Players.Count; j += 30)
-                {
-                    var player = Players[foreground + j * 4];
-                    var mob = otherMonsters[j / 8];
-                    if (mob.Health.Current < 10) mob.UpdateVital(mob.Health, mob.Health.MaxValue);
-                    player.EnqueueBroadcastMotion(Swing, applyPhysics: false);
-                    backgroundAttempts++;
-                    if (player.DamageTarget(mob, player)?.HasDamage == true) backgroundHits++;
-                    mob.EnqueueBroadcastMotion(Swing, applyPhysics: false);
-                    player.TakeDamage(mob, DamageType.Bludgeon, 1, BodyPart.Chest);
-                }
-                // A different quarter sends a staggered walking-position update every second.
-                for (int j = tick % Hz; foreground + j * 4 + 1 < Players.Count; j += Hz)
-                {
-                    int index = foreground + j * 4 + 1;
-                    var player = Players[index];
-                    if (player.Location.SquaredDistanceTo(previousPositions[index]) > 0.0025f) appliedMoves++;
-                    previousPositions[index] = new ACE.Entity.Position(player.Location);
-                    var report = new ACE.Entity.Position(places[index]);
-                    int phase = tick / Hz % 4;
-                    report.PositionY += phase == 1 || phase == 2 ? 2.5f : 0;
-                    Move(player, report, phase);
-                    moveRequests++;
-                }
                 NetworkManager.InboundMessageQueue.RunActions();
                 PlayerManager.Tick();
             }

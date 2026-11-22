@@ -41,3 +41,10 @@ Each peer has its own loopback UDP socket and fixture account. It logs in with A
 To compare movement modes, use identical configurations and change only `Server.ServerAuthoritativeMovement`. The default is `false`. With it set to `true`, ACE derives translation from the server motion interpreter and physics frame. It uses reported position for reconciliation and accepts horizontal facing when the reported position agrees with the server. On the server, jump extent, stamina, burden and skill determine takeoff speed. A stationary-player correction and a jump with server-derived velocity are checked during setup in that mode.
 
 The JSON includes authenticated and online counts, minimum registered sessions during the timed interval, TCP connections to the database when sampled by the comparison driver, processing-time percentiles, ticks over 16.67 ms, peer receipt counts, and remaining out-of-order packet counts. A movement sample is counted when a walker's server position has changed by over 5 cm since its previous sample. The trial results are in [the connected-shard report](SHARD-RESULTS.md).
+
+For the production world scheduler, append `--world-loop` after the total population. This starts `WorldManager`, including housing and normal session dispatch, and queues the scripted actions onto the world thread. The result measures wall time from each scheduled input batch to its completion. Run `--check-movement` instead for a separate movement course with a small population and authority enabled. It verifies teleportation between stock dungeons, materialization, walking, stopping and landing.
+
+```powershell
+dotnet tools/DungeonCombatBench/bin/Release/net8.0/DungeonCombatBench.dll C:/ace-bench/Config.js 200 75 C:/ace-bench/world-loop.json 1024 --world-loop
+dotnet tools/DungeonCombatBench/bin/Release/net8.0/DungeonCombatBench.dll C:/ace-bench/Config.js 4 8 C:/ace-bench/movement-course.json 12 --check-movement
+```
