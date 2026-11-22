@@ -22,10 +22,12 @@ namespace ACE.Server.Network.GameAction.Actions
             var teleportTimestamp = message.Payload.ReadUInt16();
             var forcePositionTimestamp = message.Payload.ReadUInt16();
 
-            session.Player.LastContact = message.Payload.ReadByte() != 0;   // TRUE if player is currently on ground
-
-            if (session.Player.LastContact)
-                session.Player.LastGroundPos = position;
+            bool contact = message.Payload.ReadByte() != 0;
+            if (!session.Player.ServerControlsMovement)
+            {
+                session.Player.LastContact = contact;
+                if (contact) session.Player.LastGroundPos = position;
+            }
 
             if (!session.Player.Teleporting)
                 session.Player.SetRequestedLocation(position);

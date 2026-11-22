@@ -49,7 +49,7 @@ namespace ACE.Server.WorldObjects
         {
             get
             {
-                if (FastTick)
+                if (SimulateLocomotion)
                     return !PhysicsObj.TransientState.HasFlag(TransientStateFlags.OnWalkable);
                 else
                 {
@@ -866,6 +866,21 @@ namespace ACE.Server.WorldObjects
 
             // calculate stamina cost for this jump
             var extent = Math.Clamp(jump.Extent, 0.0f, 1.0f);
+            if (ServerControlsMovement)
+            {
+                if (!float.IsFinite(jump.Extent) || Teleporting || PhysicsObj?.CurCell == null ||
+                    !PhysicsObj.TransientState.HasFlag(TransientStateFlags.OnWalkable))
+                    return;
+                var cost = MovementSystem.JumpStaminaCost(extent, burden, PKTimerActive);
+                if (cost > Stamina.Current)
+                    extent = Math.Clamp(MovementSystem.GetJumpPower(Stamina.Current, burden, PKTimerActive), 0f, extent);
+                if (PhysicsObj.get_minterp().jump_charge_is_allowed() != WeenieError.None ||
+                    !PhysicsObj.WeenieObj.InqJumpVelocity(extent, out var verticalSpeed))
+                    return;
+                var velocity = PhysicsObj.get_minterp().get_state_velocity();
+                velocity.Z = verticalSpeed;
+                jump.Velocity = velocity;
+            }
             var staminaCost = MovementSystem.JumpStaminaCost(extent, burden, PKTimerActive);
 
             //Console.WriteLine($"Strength: {strength}, Capacity: {capacity}, Encumbrance: {EncumbranceVal ?? 0}, Burden: {burden}, StaminaCost: {staminaCost}");

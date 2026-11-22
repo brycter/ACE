@@ -6,6 +6,9 @@ namespace ACE.Common
     {
         public string WorldName { get; set; } = "ACEmulator";
 
+        /// <summary>Simulate player locomotion on the server and reconcile client position reports.</summary>
+        public bool ServerAuthoritativeMovement { get; set; }
+
         public NetworkSettings Network { get; set; } = new NetworkSettings();
 
         public AccountDefaults Accounts { get; set; } = new AccountDefaults();

@@ -1,6 +1,8 @@
 {
   "Server": {
     "WorldName": "ACEmulator",
+    // Opt in to experimental server simulation of player movement.
+    "ServerAuthoritativeMovement": false,
 
     "Network": {
       // Host, default: "0.0.0.0"

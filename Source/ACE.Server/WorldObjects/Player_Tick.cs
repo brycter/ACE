@@ -153,6 +153,14 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool FastTick => IsPKType;
 
+        public bool ServerControlsMovement => ConfigManager.Config.Server.ServerAuthoritativeMovement;
+        private double lastMovementCorrection = double.NegativeInfinity;
+        private double nextMovementAwarenessCheck;
+
+        // Run the existing motion interpreter for all player types in this mode.
+        // Combat and casting continue to use their own FastTick conditions.
+        private bool SimulateLocomotion => FastTick || ServerControlsMovement;
+
         /// <summary>
         /// For advanced spellcasting / players glitching around during powersliding,
         /// the reason for this retail bug is from 2 different functions for player movement
@@ -175,8 +183,26 @@ namespace ACE.Server.WorldObjects
 
         public void OnMoveToState(MoveToState moveToState)
         {
-            if (!FastTick)
+            if (!SimulateLocomotion)
                 return;
+            if (ServerControlsMovement)
+            {
+                // Run rate and encumbrance are applied by the interpreter. Raw speeds
+                // describe the direction and fraction of a full key press.
+                var input = moveToState.RawMotionState;
+                input.CurrentStyle = CurrentMotionState.Stance;
+                if (input.ForwardCommand is not (MotionCommand.Invalid or MotionCommand.Ready or
+                    MotionCommand.WalkForward or MotionCommand.WalkBackwards or MotionCommand.RunForward or
+                    MotionCommand.Crouch or MotionCommand.Sitting or MotionCommand.Sleeping))
+                    input.ForwardCommand = MotionCommand.Ready;
+                if (input.SidestepCommand is not (MotionCommand.SideStepLeft or MotionCommand.SideStepRight))
+                    input.SidestepCommand = MotionCommand.Invalid;
+                if (input.TurnCommand is not (MotionCommand.TurnLeft or MotionCommand.TurnRight))
+                    input.TurnCommand = MotionCommand.Invalid;
+                input.ForwardSpeed = ClampMovementInput(input.ForwardSpeed);
+                input.SidestepSpeed = ClampMovementInput(input.SidestepSpeed);
+                input.TurnSpeed = ClampMovementInput(input.TurnSpeed);
+            }
 
             if (DebugPlayerMoveToStatePhysics)
                 Console.WriteLine(moveToState.RawMotionState);
@@ -299,6 +325,37 @@ namespace ACE.Server.WorldObjects
 
                 InUpdate = true;
 
+                if (ServerControlsMovement)
+                {
+                    var report = RequestedLocation;
+                    RequestedLocation = null;
+                    if (Teleporting || PhysicsObj?.CurCell == null) return false;
+                    var previousBlock = Location.Landblock;
+                    if (PhysicsObj.IsMovingOrAnimating || PhysicsObj.Velocity != Vector3.Zero)
+                    {
+                        UpdatePlayerPhysics();
+                        if (Teleporting) return true;
+                        if (PhysicsObj.CurCell != null)
+                        {
+                            var frame = PhysicsObj.Position.Frame;
+                            if (Location.Cell != PhysicsObj.Position.ObjCellID || Location.Pos != frame.Origin)
+                            {
+                                Location = new ACE.Entity.Position(PhysicsObj.Position.ObjCellID, frame.Origin, frame.Orientation);
+                                if (PhysicsTimer.CurrentTime >= nextMovementAwarenessCheck)
+                                {
+                                    CheckMonsters();
+                                    nextMovementAwarenessCheck = PhysicsTimer.CurrentTime + 0.5;
+                                }
+                            }
+                        }
+                        if (MoveToParams?.Callback != null && !PhysicsObj.IsMovingOrAnimating)
+                            HandleMoveToCallback();
+                    }
+                    if (!Teleporting && report != null)
+                        ReconcileMovementReport(report);
+                    return previousBlock != Location.Landblock;
+                }
+
                 // update position through physics engine
                 if (RequestedLocation != null)
                 {
@@ -314,12 +371,11 @@ namespace ACE.Server.WorldObjects
                         HandleMoveToCallback();
                 }
 
-                InUpdate = false;
-
                 return landblockUpdate;
             }
             finally
             {
+                InUpdate = false;
                 var elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
                 ServerPerformanceMonitor.AddToCumulativeEvent(ServerPerformanceMonitor.CumulativeEventHistoryType.Player_Tick_UpdateObjectPhysics, elapsedSeconds);
                 if (elapsedSeconds >= 1) // Yea, that ain't good....
@@ -327,6 +383,36 @@ namespace ACE.Server.WorldObjects
                 else if (elapsedSeconds >= 0.010)
                     log.DebugFormat("[PERFORMANCE][PHYSICS] {0}:{1} took {2:N1} ms to process UpdateObjectPhysics() at loc: {3}", Guid, Name, (elapsedSeconds * 1000), Location);
             }
+        }
+
+        private static float ClampMovementInput(float value) => float.IsFinite(value) ? Math.Clamp(value, -1f, 1f) : 0f;
+
+        private void ReconcileMovementReport(ACE.Entity.Position report)
+        {
+            if (PhysicsObj?.CurCell == null) return;
+            LastContact = PhysicsObj.TransientState.HasFlag(TransientStateFlags.OnWalkable);
+            if (LastContact) LastGroundPos = new ACE.Entity.Position(Location);
+
+            // Mouse look can supply an absolute facing without a turn key. Only
+            // the horizontal heading is taken from the report.
+            var rotation = report.Rotation;
+            var heading = new Quaternion(0, 0, rotation.Z, rotation.W);
+            var length = heading.LengthSquared();
+            var distance = Location.SquaredDistanceTo(report);
+            bool close = float.IsFinite(distance) && distance <= 1f && report.Cell == Location.Cell;
+            if (close && float.IsFinite(length) && length > 0.001f && !IsPlayerMovingTo && !IsPlayerMovingTo2)
+            {
+                PhysicsObj.Position.Frame.Orientation = Quaternion.Normalize(heading);
+                Location.Rotation = PhysicsObj.Position.Frame.Orientation;
+            }
+            if (!close && PhysicsTimer.CurrentTime - lastMovementCorrection >= 0.25)
+            {
+                lastMovementCorrection = PhysicsTimer.CurrentTime;
+                Sequences.GetNextSequence(SequenceType.ObjectForcePosition);
+                SendUpdatePosition();
+            }
+            else if (DateTime.UtcNow - LastUpdatePosition >= MoveToState_UpdatePosition_Threshold)
+                SendUpdatePosition();
         }
 
         public void UpdatePlayerPhysics()
