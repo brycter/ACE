@@ -24,3 +24,20 @@ dotnet tools/DungeonCombatBench/bin/Release/net8.0/DungeonCombatBench.dll C:/ace
 ```
 
 The arguments are the configuration path, player count, measured seconds, and JSON output path. Each process warms up for three seconds before sampling. The JSON records combat attempts and hits, minimum observer count, UDP packets sent and received, process CPU milliseconds, allocated bytes, managed heap, private bytes, working set and the 99th percentile of tick processing time. The tick timer excludes the pacing sleep. Process CPU and allocations exclude fixture startup. The receiver's totals include warmup. Compare attack attempts, successful hits, and packet delivery before interpreting a pair.
+
+## Connected shard and movement tests
+
+Add a fifth argument for the total online population. The below examples each create 1,024 password-authenticated, in-world characters. The first puts 32 in Holtburg Dungeon and the second puts 200 there. The remaining characters occupy stock dungeon portal arrivals in groups of up to 32. Each background group has one Tusker, one quarter of the characters fight, one quarter walk and stop, and the remainder stand in the room. All characters carry 32 items.
+
+In the dedicated fixture configuration set `Server.Network.MaximumAllowedSessions` to 1152. Set the environment variable `ACE_BENCH_PASSWORD` to a fresh password for the fixture, and reuse it for subsequent trials on that same fixture. Run the commands in separate processes.
+
+```powershell
+dotnet tools/DungeonCombatBench/bin/Release/net8.0/DungeonCombatBench.dll C:/ace-bench/Config.js 32 75 C:/ace-bench/ordinary.json 1024
+dotnet tools/DungeonCombatBench/bin/Release/net8.0/DungeonCombatBench.dll C:/ace-bench/Config.js 200 75 C:/ace-bench/event.json 1024
+```
+
+Each peer has its own loopback UDP socket and fixture account. It logs in with ACE's password handshake, waits for character-selection traffic, and acknowledges sequences it has received. ACE loads the account's character list from the shard. The harness places synthetic characters into the real landblock and online-player registries and drives game actions on the server. Walk inputs go through the normal MoveToState decoder. This workload exercises character ticks, world physics, session processing and UDP delivery. It scripts world entry, movement input and combat locally. Native client prediction, latency over the internet, unscripted monster AI and long-running shard activity need separate testing.
+
+To compare movement modes, use identical configurations and change only `Server.ServerAuthoritativeMovement`. The default is `false`. With it set to `true`, ACE derives translation from the server motion interpreter and physics frame. It uses reported position for reconciliation and accepts horizontal facing when the reported position agrees with the server. On the server, jump extent, stamina, burden and skill determine takeoff speed. A stationary-player correction and a jump with server-derived velocity are checked during setup in that mode.
+
+The JSON includes authenticated and online counts, minimum registered sessions during the timed interval, TCP connections to the database when sampled by the comparison driver, processing-time percentiles, ticks over 16.67 ms, peer receipt counts, and remaining out-of-order packet counts. A movement sample is counted when a walker's server position has changed by over 5 cm since its previous sample. The trial results are in [the connected-shard report](SHARD-RESULTS.md).
